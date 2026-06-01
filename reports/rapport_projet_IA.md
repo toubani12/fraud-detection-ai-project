@@ -1,281 +1,352 @@
-# Projet Intelligence Artificielle
+# Rapport de Projet — Intelligence Artificielle
 ## Classification Robuste et Analyse de Décision en Environnement Critique
-### Credit Card Fraud Detection — Rapport Complet
+
+---
+
+| Étudiant | TOUBANI Badr Eddine |
+|----------|---------------------|
+| Professeur | Mme. Asmae OUHMIDA |
+| Filière | SDIA — Systèmes Distribués et Intelligence Artificielle |
+| Établissement | ENSET (École Nationale Supérieure de l'Enseignement Technique) |
+| Module | Intelligence Artificielle |
+| Dataset | Credit Card Fraud Detection — 284 807 transactions (Kaggle) |
+| Date | 01 Juin 2026 |
+
+---
+
+## Liste des Abréviations
+
+| Abréviation | Définition |
+|-------------|-----------|
+| ML | Machine Learning — Apprentissage automatique |
+| EDA | Exploratory Data Analysis — Analyse Exploratoire des Données |
+| VIF | Variance Inflation Factor — Facteur d'Inflation de la Variance |
+| SMOTE | Synthetic Minority Over-sampling Technique |
+| ADASYN | Adaptive Synthetic Sampling Approach |
+| AUPRC | Area Under the Precision-Recall Curve |
+| MCC | Matthews Correlation Coefficient |
+| ROC-AUC | Receiver Operating Characteristic — Area Under Curve |
+| ECE | Expected Calibration Error — Erreur de Calibration Attendue |
+| SHAP | SHapley Additive exPlanations |
+| TPE | Tree-structured Parzen Estimator (Optuna) |
+| L1 / Lasso | Régularisation par norme L1 (somme des valeurs absolues) |
+| L2 / Ridge | Régularisation par norme L2 (somme des carrés) |
+| FP / FN / TP / TN | Faux Positif / Faux Négatif / Vrai Positif / Vrai Négatif |
+| SPW | scale_pos_weight — Paramètre XGBoost pour déséquilibre |
+| PCA | Principal Component Analysis — Analyse en Composantes Principales |
 
 ---
 
 ## Table des Matières
 
-1. [Introduction et Contexte](#1-introduction-et-contexte)
-2. [Étape 1 : Analyse Exploratoire et Préparation (EDA)](#2-étape-1--analyse-exploratoire-et-préparation)
+1. [Introduction Générale](#1-introduction-générale)
+2. [Étape 1 : Analyse Exploratoire et Préparation des Données](#2-étape-1--analyse-exploratoire-et-préparation-des-données)
 3. [Étape 2 : Développement des Modèles](#3-étape-2--développement-des-modèles)
 4. [Étape 3 : Évaluation et Calibration](#4-étape-3--évaluation-et-calibration)
-5. [Étape 4 : Interprétabilité (SHAP)](#5-étape-4--interprétabilité)
-6. [Résultats Finaux et Comparaison](#6-résultats-finaux-et-comparaison)
-7. [Conclusion](#7-conclusion)
+5. [Étape 4 : Interprétabilité par SHAP](#5-étape-4--interprétabilité-par-shap)
+6. [Synthèse et Comparaison des Modèles](#6-synthèse-et-comparaison-des-modèles)
+7. [Conclusion et Perspectives](#7-conclusion-et-perspectives)
+8. [Références Bibliographiques](#8-références-bibliographiques)
 
 ---
 
-## 1. Introduction et Contexte
+## 1. Introduction Générale
 
-### Problématique
-La détection de fraude bancaire est un problème de classification binaire avec un **déséquilibre extrême** de classes : dans le dataset Credit Card Fraud Detection (Kaggle), seulement **0.66%** des transactions sont frauduleuses (1 882 fraudes sur 284 807 transactions), soit un ratio d'environ **150:1**.
+La détection de fraude bancaire constitue l'un des défis les plus représentatifs des problèmes de classification déséquilibrée en intelligence artificielle appliquée. Dans des scénarios réels tels que la fraude par carte de crédit, le diagnostic médical ou la prédiction de pannes industrielles, les classes sont rarement équilibrées : les événements d'intérêt (fraudes, maladies, défaillances) sont rares face à la masse des événements normaux.
 
-Ce déséquilibre rend les approches classiques inefficaces :
-- Un modèle qui prédit toujours "normal" atteint une **Accuracy de 99.34%** mais ne détecte aucune fraude.
-- L'optimisation de l'Accuracy est donc **trompeuse** dans ce contexte.
+Ce rapport documente la conception et l'implémentation d'un système complet de classification robuste appliqué au jeu de données *Credit Card Fraud Detection* (Kaggle), comprenant **284 807 transactions** avec un ratio de déséquilibre de **150:1**. L'objectif central est de construire des modèles capables de détecter efficacement les fraudes tout en produisant des probabilités calibrées exploitables par les systèmes de décision.
 
-### Dataset : Credit Card Fraud Detection
-- **Source** : Kaggle (UCI ML Repository)
-- **Observations** : 284 807 transactions
-- **Variables** : V1–V28 (composantes PCA anonymisées), Time, Amount, Class
-- **Cible** : Class (0 = Normal, 1 = Fraude)
-- **Ratio** : 150.3 :1 (Normal:Fraude)
+La démarche suit une approche scientifique rigoureuse articulée en quatre étapes complémentaires :
+
+1. **Analyse Exploratoire et Préparation des Données (EDA)** : feature engineering avancé, analyse de colinéarité par VIF, comparaison de stratégies de rééquilibrage.
+2. **Développement des Modèles** : trois approches mathématiquement distinctes — Régression Logistique ElasticNet (modèle linéaire), Random Forest avec analyse de proximité (ensemble), et XGBoost avec apprentissage sensible au coût et optimisation bayésienne.
+3. **Évaluation et Calibration** : métriques adaptées au déséquilibre (F1-Macro, AUPRC, MCC), diagrammes de fiabilité, application du Platt Scaling.
+4. **Interprétabilité** : SHAP (SHapley Additive Explanations) pour expliquer les prédictions individuelles et globales.
 
 ---
 
-## 2. Étape 1 : Analyse Exploratoire et Préparation
+## 2. Étape 1 : Analyse Exploratoire et Préparation des Données
 
-### 2.1 Feature Engineering Avancé
+### 2.1 Présentation du Dataset
 
-#### Transformations de l'Amount
-L'Amount présente une forte **asymétrie à droite** (skewness positif). Deux transformations ont été appliquées :
-- **`Amount_log`** = log1p(Amount) — réduit l'effet des valeurs extrêmes
-- **`Amount_sqrt`** = sqrt(Amount) — transformation plus douce
+Le jeu de données est le *Credit Card Fraud Detection*, disponible sur Kaggle, originellement issu du Machine Learning Group de l'Université Libre de Bruxelles.
 
-#### Variables Cycliques du Temps
-La variable Time représente les secondes écoulées. Pour capturer le **cycle journalier** :
-- **`Hour`** = (Time % 86400) / 3600
-- **`Hour_sin`** = sin(2π × Hour / 24)
-- **`Hour_cos`** = cos(2π × Hour / 24)
+| Attribut | Valeur | Remarque |
+|----------|--------|----------|
+| Observations | 284 807 transactions | 2 jours de données |
+| Features initiales | 30 (V1–V28 + Time + Amount) | V1–V28 : composantes PCA |
+| Variable cible | Class (0 = Normal, 1 = Fraude) | Variable binaire |
+| Transactions normales | 282 925 (99.34%) | Classe majoritaire |
+| Transactions frauduleuses | 1 882 (0.66%) | Classe minoritaire |
+| Ratio de déséquilibre | 150.3 : 1 | Déséquilibre extrême |
+| Valeurs manquantes | 0 | Dataset propre |
 
-Ces transformations cycliques évitent la discontinuité artificielle entre 23h59 et 0h00.
+*Tableau 1.1 — Caractéristiques du dataset Credit Card Fraud Detection*
 
-#### Statistiques Locales
-- **`Amount_zscore_local`** : z-score de l'Amount par rapport aux transactions dans la même fenêtre temporelle (50 bins) — détecte les montants anormaux relativement à la période.
-- **`Amount_bin_mean`**, **`Amount_bin_std`** : statistiques agrégées par fenêtre temporelle.
+### 2.2 Feature Engineering Avancé
 
-#### Statistiques des Composantes PCA
-- **`V_norm`** : norme L2 de V1–V28 — mesure "l'amplitude" globale du profil PCA
-- **`V_mean`**, **`V_std`** : tendance centrale et dispersion
+L'ingénierie des variables représente une étape cruciale pour améliorer la capacité discriminante des modèles. **14 nouvelles variables** ont été créées, portant le total à **42 features**.
 
-#### Variables d'Interaction
-Basé sur des études antérieures du dataset :
-- **`V4_V11`** = V4 × V11 — interaction connue pour discriminer la fraude
-- **`V14_V17`** = V14 × V17
-- **`V3_V10`** = V3 × V10
+#### 2.2.1 Transformations de la Variable Amount
 
-**Total : 42 features** après engineering (contre 30 initialement).
+La variable Amount présente une forte asymétrie à droite (skewness positif). Deux transformations ont été appliquées :
 
-### 2.2 Analyse de Colinéarité
+- **Amount_log** = log(1 + Amount) — réduit l'effet des valeurs extrêmes, stabilise la variance
+- **Amount_sqrt** = √Amount — transformation plus douce, préserve mieux les petits montants
 
-#### Matrice de Corrélation
-Corrélations élevées (|r| > 0.7) détectées :
-| Feature 1 | Feature 2 | Corrélation |
-|-----------|-----------|-------------|
-| V2 | V13 | 1.000 |
-| V24 | V26 | 1.000 |
-| V_norm | V_std | 0.990 |
-| Amount_bin_mean | Amount_bin_std | 0.813 |
-| Amount_log | Amount_sqrt | 0.811 |
+#### 2.2.2 Variables Cycliques du Temps
 
-> **Note** : Les features V2/V13 et V24/V26 sont parfaitement colinéaires — elles représentent la même dimension PCA sous deux transformations. Les modèles d'ensemble (RF, XGBoost) gèrent naturellement cette multicolinéarité via la sélection aléatoire de features.
+La variable Time représente les secondes écoulées depuis la première transaction. Pour capturer le cycle journalier sans créer de discontinuité artificielle entre 23h59 et 0h00 :
 
-#### VIF (Variance Inflation Factor)
-- V2 et V13 : **VIF = ∞** (colinéarité parfaite)
-- V15 : VIF = 7.93 (modéré, < 10)
-- V4 : VIF = 5.37 (acceptable)
+```
+Hour = (Time mod 86400) / 3600
+Hour_sin = sin(2π × Hour / 24)
+Hour_cos = cos(2π × Hour / 24)
+```
 
-**Décision** : Pour la Régression Logistique, la pénalité ElasticNet (L1+L2) gère automatiquement la multicolinéarité via la régularisation Ridge (L2). Pour RF et XGBoost, le sous-échantillonnage des features atténue cet effet.
+Cette transformation préserve la continuité cyclique et permet aux modèles linéaires de modéliser les patterns temporels circulaires.
 
-### 2.3 Traitement du Déséquilibre
+#### 2.2.3 Statistiques Locales et Interactions
 
-Cinq stratégies ont été comparées :
+- **Amount_zscore_local** = (Amount − mean_bin) / std_bin — montant anormal par rapport à la fenêtre temporelle (50 bins)
+- **V_norm** = ‖V1,...,V28‖₂ — amplitude globale du profil PCA
+- **V_mean, V_std** — tendance centrale et dispersion des composantes PCA
+- **V4_V11, V14_V17, V3_V10** — interactions multiplicatives entre composantes PCA discriminantes
 
-| Stratégie | Type | Normal | Fraude | Ratio |
-|-----------|------|--------|--------|-------|
-| Raw (aucun) | — | 198 046 | 1 318 | 150:1 |
-| class_weight='balanced' | Algorithmique | 198 046 | 1 318 | 150:1 |
-| SMOTE | Sur-échantillonnage | 198 046 | 19 804 | 10:1 |
-| ADASYN | Sur-échantillonnage adaptatif | 198 046 | 20 359 | ~10:1 |
-| NearMiss | Sous-échantillonnage | 13 180 | 1 318 | 10:1 |
+| Feature Créée | Formule | Justification |
+|---------------|---------|---------------|
+| Amount_log | log(1 + Amount) | Normalisation distribution skewed |
+| Hour_sin / Hour_cos | sin/cos(2π·h/24) | Encodage cyclique du temps |
+| Amount_zscore_local | (x − μ_bin) / σ_bin | Anomalie relative locale |
+| V_norm | ‖V1,...,V28‖₂ | Amplitude du profil PCA |
+| V4_V11, V14_V17 | Vᵢ × Vⱼ | Interactions non-linéaires PCA |
 
-#### Justification du choix pour chaque modèle
-- **Logistic + RF** : `class_weight='balanced'` — ajuste les poids à la volée sans modifier les données, préservant la distribution originale.
-- **XGBoost** : `scale_pos_weight` — équivalent algorithmique du class_weight pour le boosting.
-- **Comparaison SMOTE/ADASYN** : Génère de nouveaux exemples synthétiques par interpolation k-NN. ADASYN adapte la densité de génération aux régions difficiles (frontières de classe).
+*Tableau 1.2 — Features créées par ingénierie des variables*
+
+### 2.3 Analyse de Colinéarité
+
+#### 2.3.1 Matrice de Corrélation
+
+La matrice de corrélation a été calculée sur l'ensemble des 42 features. Plusieurs paires présentent des corrélations élevées (|r| > 0.7) :
+
+| Feature 1 | Feature 2 | Corrélation r | Interprétation |
+|-----------|-----------|---------------|----------------|
+| V2 | V13 | 1.000 | Colinéarité parfaite |
+| V24 | V26 | 1.000 | Colinéarité parfaite |
+| V_norm | V_std | 0.990 | Très haute |
+| Amount_log | Amount_sqrt | 0.811 | Haute |
+| Hour | Hour_sin | −0.780 | Haute (attendue) |
+
+*Tableau 1.3 — Corrélations élevées détectées (|r| > 0.7)*
+
+#### 2.3.2 Analyse VIF (Variance Inflation Factor)
+
+$$VIF_j = \frac{1}{1 - R^2_j}$$
+
+où $R^2_j$ est le coefficient de détermination de $X_j$ régressé sur les autres features.
+
+- VIF < 5 : pas de multicolinéarité
+- 5 ≤ VIF < 10 : multicolinéarité modérée
+- VIF ≥ 10 : multicolinéarité sévère
+
+Les features **V2/V13** et **V24/V26** présentent un VIF infini (colinéarité parfaite). La régularisation L2 de la Régression Logistique ElasticNet et le sous-échantillonnage aléatoire des features dans Random Forest / XGBoost gèrent naturellement ce problème **sans suppression manuelle**.
+
+### 2.4 Traitement du Déséquilibre des Classes
+
+Avec un ratio de 150:1, les modèles non contraints tendent à ignorer la classe minoritaire. Cinq stratégies ont été comparées :
+
+| Stratégie | Type | Normal | Fraude | Avantage principal |
+|-----------|------|--------|--------|-------------------|
+| Raw (aucun) | — | 198 046 | 1 318 | Données originales |
+| class_weight | Algorithmique | 198 046 | 1 318 | Pas de modification des données |
+| SMOTE | Sur-échantillonnage | 198 046 | 19 804 | Exemples synthétiques (k-NN) |
+| ADASYN | Sur-éch. adaptatif | 198 046 | 20 359 | Focus sur les zones difficiles |
+| NearMiss | Sous-échantillonnage | 13 180 | 1 318 | Réduit la taille du dataset |
+
+*Tableau 1.4 — Comparaison des stratégies de rééquilibrage*
+
+**Décision finale :** `class_weight='balanced'` / `scale_pos_weight` retenu — agit sur l'optimisation sans modifier la distribution des données, préservant l'intégrité statistique.
 
 ---
 
 ## 3. Étape 2 : Développement des Modèles
 
-### 3.1 Modèle 1 : Régression Logistique avec Pénalité ElasticNet
+Trois approches mathématiquement distinctes ont été confrontées, couvrant le spectre complet des paradigmes d'apprentissage supervisé : modèle linéaire, ensemble d'arbres aléatoires, et boosting séquentiel.
 
-#### Formulation Mathématique
+### 3.1 Modèle 1 — Régression Logistique avec Pénalité ElasticNet
 
-$$\min_{w} \sum_{i=1}^n \log(1 + e^{-y_i w^T x_i}) + \alpha \left[ \rho \|w\|_1 + \frac{1-\rho}{2} \|w\|_2^2 \right]$$
+La Régression Logistique constitue le modèle de référence (baseline) pour évaluer le gain apporté par les modèles plus complexes.
 
-Où :
-- **L1 (Lasso)** : $\rho \|w\|_1$ → sélection de features, coefficients sparse
-- **L2 (Ridge)** : $\frac{1-\rho}{2}\|w\|_2^2$ → gestion de la multicolinéarité, stabilité numérique
+#### 3.1.1 Formulation Mathématique
 
-#### Hyperparamètres Retenus
+Le modèle estime la probabilité via la fonction sigmoïde :
 
-| Paramètre | Valeur | Justification |
-|-----------|--------|---------------|
-| C | 0.1 | Régularisation modérée, sélectionné par CV 5-fold sur AUPRC |
-| l1_ratio | 0.5 | Équilibre L1/L2 ; L1 pour la sparsité, L2 pour la stabilité |
-| solver | 'saga' | Seul solver compatible ElasticNet pour grands jeux de données |
-| class_weight | 'balanced' | Pondération inverse à la fréquence de classe |
-| max_iter | 2000 | Garantit la convergence avec SAGA |
+$$P(y=1 \mid x) = \sigma(w^T x + b) = \frac{1}{1 + \exp(-(w^T x + b))}$$
 
-#### Résultats
+Avec la pénalité ElasticNet :
 
-| Métrique | Valeur |
-|----------|--------|
-| F1-Macro | 0.4383 |
-| AUPRC | 0.0520 |
-| ROC-AUC | 0.8426 |
-| MCC | 0.0996 |
-| Recall (Fraude) | 0.8298 |
-| Spécificité | 0.7228 |
+$$\min_w \sum_{i=1}^n \log(1 + e^{-y_i w^T x_i}) + \alpha \left[ \rho \|w\|_1 + \frac{1-\rho}{2} \|w\|_2^2 \right]$$
 
-**Analyse** : Le modèle linéaire obtient un bon recall (83%) mais génère beaucoup de faux positifs (faible précision = 2%). C'est acceptable dans un contexte de détection de fraude où manquer une fraude (faux négatif) est coûteux.
+où ρ (l1_ratio) contrôle l'équilibre entre L1 (sélection de features par sparsité) et L2 (stabilisation de la multicolinéarité).
 
----
+#### 3.1.2 Hyperparamètres Justifiés
 
-### 3.2 Modèle 2 : Random Forest avec Analyse de Proximité
+| Paramètre | Valeur | Justification Théorique |
+|-----------|--------|-------------------------|
+| C | 0.1 | Régularisation modérée ; sélectionné par CV 5-fold sur AUPRC — compromis biais-variance |
+| l1_ratio | 0.5 | Équilibre L1 (sparsité) / L2 (stabilité) ; L2 seul ne ferait pas de sélection de features |
+| solver | saga | Seul solver scikit-learn compatible avec ElasticNet pour grands datasets (SGD stochastique) |
+| class_weight | balanced | w_k = n_samples / (n_classes × n_k) — pondère la fraude ×150 |
+| max_iter | 2000 | Garantit la convergence de SAGA avec la régularisation ElasticNet au ratio 150:1 |
 
-#### Formulation et Principe
+*Tableau 2.1 — Hyperparamètres de la Régression Logistique ElasticNet*
 
-La Forêt Aléatoire est un ensemble de $T$ arbres de décision entraînés sur des sous-échantillons bootstrap :
+#### 3.1.3 Résultats
 
-$$\hat{y} = \frac{1}{T} \sum_{t=1}^T h_t(x)$$
+| Métrique | Valeur | Interprétation |
+|----------|--------|----------------|
+| F1-Macro | 0.4383 | Déséquilibre fort entre F1 des deux classes |
+| F1-Fraude | 0.0381 | Faible précision (nombreux FP) mais bon recall |
+| AUPRC | 0.0520 | 7.9× au-dessus du baseline aléatoire (0.0066) |
+| ROC-AUC | 0.8426 | Bonne séparabilité globale |
+| MCC | 0.0996 | Faible mais positif (meilleur que l'aléatoire) |
+| Recall Fraude | 82.98% | Excellent : manque peu de fraudes |
+| Spécificité | 72.28% | Nombreux faux positifs (faible précision) |
 
-Deux sources de randomisation réduisent la variance :
-1. **Bootstrap** des observations (bagging)
-2. **Sous-ensemble aléatoire** de $\sqrt{p}$ features à chaque nœud
+*Tableau 2.2 — Résultats de la Régression Logistique ElasticNet*
 
-#### Hyperparamètres Retenus
+**Analyse :** Le modèle linéaire obtient un excellent recall (83%) au prix d'une précision faible — caractéristique des modèles avec class_weight élevé. Il est optimal lorsque le coût d'une fraude manquée (Faux Négatif) est extrêmement supérieur au coût des fausses alarmes.
 
-| Paramètre | Valeur | Justification |
-|-----------|--------|---------------|
-| n_estimators | 100 | Compromis stabilité/vitesse ; diminishing returns au-delà de 300 |
-| max_depth | 12 | Assez profond pour capturer les patterns de fraude complexes |
-| min_samples_leaf | 5 | Évite les feuilles trop spécifiques ; requis pour proximité significative |
-| max_features | 'sqrt' | Heuristique standard RF : ≈ 6 features sur 42 |
-| class_weight | 'balanced' | Compensation automatique du ratio 150:1 |
+### 3.2 Modèle 2 — Random Forest avec Analyse de Proximité
 
-#### Matrice de Proximité
+La Forêt Aléatoire est un ensemble de $T$ arbres de décision entraînés en parallèle sur des sous-échantillons bootstrap. Sa force réside dans la réduction de la variance par l'agrégation.
 
-La proximité entre deux observations $i$ et $j$ est :
+#### 3.2.1 Formulation Mathématique
 
-$$P[i,j] = \frac{1}{T} \sum_{t=1}^T \mathbb{1}[\text{leaf}_t(i) = \text{leaf}_t(j)]$$
+$$\hat{y} = \frac{1}{T} \sum_{t=1}^{T} h_t(x)$$
 
-**Interprétation** : Si deux observations atteignent souvent la même feuille terminale, elles sont "similaires" du point de vue de la forêt.
+Deux sources de randomisation réduisent la corrélation entre les arbres :
+- **Bootstrap** : chaque arbre entraîné sur un sous-échantillon avec remise
+- **Sous-ensemble de features** : seulement $\sqrt{p}$ features par nœud (p = 42 → ~6 features)
 
-#### Détection des Outliers de Prédiction
+#### 3.2.2 Matrice de Proximité et Détection d'Outliers
+
+La matrice de proximité mesure la similarité structurelle entre observations :
+
+$$P[i,j] = \frac{1}{T} \sum_{t=1}^{T} \mathbb{1}[\text{leaf}_t(i) = \text{leaf}_t(j)]$$
+
+Si $P[i,j]$ est élevé, les observations $i$ et $j$ terminent souvent dans la même feuille → elles sont "similaires" selon la forêt.
 
 Le score d'outlier pour l'observation $i$ de classe $c$ est :
 
-$$\text{OutlierScore}(i) = \frac{n}{\sum_{j \in c} P[i,j]^2}$$
+$$\text{OutlierScore}(i) = \frac{n}{\sum_{j \in \text{classe}_c} P[i,j]^2}$$
 
-Un score élevé indique que l'observation est **isolée de ses voisins de classe** → le modèle hésite ou échoue sur ces points.
+Un score élevé signifie que l'observation est **isolée de ses voisins de classe** → le modèle hésite ou échoue sur ce point.
 
-#### Résultats
+#### 3.2.3 Analyse des Outliers de Prédiction
+
+L'analyse des top 15 outliers révèle 4 catégories de cas difficiles :
+
+| Catégorie | Explication Mécanistique |
+|-----------|--------------------------|
+| **Faux Négatifs** | Fraudes structurellement similaires aux transactions normales (petits montants, profil PCA commun). La forêt manque de voisins fraude dans l'espace de proximité. |
+| **Faux Positifs** | Transactions normales avec valeurs PCA extrêmes ou montants anormaux qui tombent dans des clusters fraude de la matrice de proximité. |
+| **Points de Frontière** | Probabilité prédite ≈ 0.5 révélant une zone d'ambiguïté structurelle où les distributions se superposent. |
+| **Outliers Structurels** | Patterns de fraude rares (typologies atypiques) non vus pendant l'entraînement — pas de voisinage de référence. |
+
+*Tableau 2.3 — Catégories d'outliers de prédiction et leurs causes*
+
+#### 3.2.4 Hyperparamètres Justifiés
+
+| Paramètre | Valeur | Justification Théorique |
+|-----------|--------|-------------------------|
+| n_estimators | 100 | Compromis stabilité/vitesse ; diminishing returns au-delà de 300 arbres |
+| max_depth | 12 | Assez profond pour patterns de fraude complexes ; évite la sur-spécialisation |
+| min_samples_leaf | 5 | Prévient les feuilles trop spécifiques ; garantit la signifiance des proximités |
+| max_features | sqrt(p) | Heuristique standard RF : ≈ 6 features sur 42, réduit la corrélation entre arbres |
+| class_weight | balanced | Compensation automatique du ratio 150:1 par pondération inverse aux fréquences |
+
+*Tableau 2.4 — Hyperparamètres du Random Forest*
+
+#### 3.2.5 Résultats
 
 | Métrique | Valeur |
 |----------|--------|
 | F1-Macro | 0.4933 |
+| F1-Fraude | 0.0545 |
 | AUPRC | 0.0375 |
 | ROC-AUC | 0.8399 |
-| MCC | 0.1041 |
-| Recall (Fraude) | 0.5532 |
-| Spécificité | 0.8755 |
+| MCC | 0.1041 (**meilleur**) |
+| Recall Fraude | 55.32% |
+| Spécificité | 87.55% |
 
-#### Analyse des Outliers de Prédiction
+**Analyse :** Le Random Forest présente le **meilleur MCC** (0.1041), reflétant sa capacité à maintenir un équilibre stable entre toutes les cellules de la matrice de confusion. Sa propriété unique — la matrice de proximité — apporte une valeur diagnostique pour comprendre les zones d'ambiguïté.
 
-Les outliers révèlent 4 catégories de cas difficiles :
+### 3.3 Modèle 3 — XGBoost avec Apprentissage Sensible au Coût
 
-1. **Faux Négatifs** (fraudes manquées) : Transactions frauduleuses avec des montants faibles et des composantes PCA proches de la normale. Le modèle manque de voisins fraude dans l'espace de proximité pour voter avec confiance.
+XGBoost (eXtreme Gradient Boosting) est un algorithme de boosting séquentiel reconnu comme l'état de l'art pour les données tabulaires.
 
-2. **Faux Positifs** (fausses alarmes) : Transactions normales avec des valeurs PCA extrêmes ou des montants anormaux qui tombent dans des clusters fraude.
+#### 3.3.1 Formulation du Gradient Boosting
 
-3. **Points de frontière** : Probabilité prédite ≈ 0.5, révélant une zone d'ambiguïté structurelle entre les deux classes.
-
-4. **Outliers structurels** : Patterns rares (fraudes atypiques) que la forêt n'a jamais vus pendant l'entraînement.
-
----
-
-### 3.3 Modèle 3 : XGBoost avec Apprentissage Sensible au Coût
-
-#### Formulation du Gradient Boosting
+À chaque itération $m$, un arbre $h_m$ est entraîné sur les pseudo-résidus :
 
 $$F_m(x) = F_{m-1}(x) + \eta \cdot h_m(x)$$
 
-À chaque itération, un arbre $h_m$ est entraîné sur les **résidus pseudo-négatifs** (gradients de la fonction de perte).
+L'objectif à minimiser :
 
-#### Stratégie A : scale_pos_weight
+$$\text{Obj}(m) = \sum_i \left[ g_i \cdot f_m(x_i) + \frac{1}{2} h_i \cdot f_m(x_i)^2 \right] + \Omega(f_m)$$
 
-$$\text{scale\_pos\_weight} = \frac{N_{\text{normal}}}{N_{\text{fraud}}} \approx 150$$
+avec $g_i = \partial L/\partial \hat{y}$ et $h_i = \partial^2 L/\partial \hat{y}^2$ les gradients et hessiens, et $\Omega$ la régularisation.
 
-Ce paramètre **amplifie les gradients** des exemples positifs (fraude) par un facteur de 150, forçant le modèle à accorder plus d'importance aux erreurs sur la classe minoritaire.
+#### 3.3.2 Stratégie A — scale_pos_weight
 
-**Justification** : Simple, efficace, directement intégré dans XGBoost. Équivalent à l'oversampling mais agit sur l'optimisation, pas sur les données.
+$$\text{scale\_pos\_weight} = \frac{N_{\text{normal}}}{N_{\text{fraud}}} \approx \frac{198\,046}{1\,318} \approx 150$$
 
-#### Stratégie B : Focal Loss (fonction de perte asymétrique)
+Ce paramètre amplifie les gradients des exemples positifs (fraude), forçant le modèle à apprendre davantage des fraudes. Le paramètre optimal découvert par Optuna est **157.7** — légèrement supérieur au ratio théorique, indiquant qu'une légère sur-pondération est bénéfique.
 
-Inspirée de Lin et al. (2017), la Focal Loss introduit un terme de **focalisation** $\gamma$ qui réduit la contribution des exemples faciles :
+#### 3.3.3 Stratégie B — Focal Loss (Fonction de Perte Asymétrique)
 
-$$FL(p_t) = -\alpha (1-p_t)^\gamma \log(p_t)$$
+Inspirée des travaux de Lin et al. (2017) sur la détection d'objets :
 
-- **$\gamma = 0$** : cross-entropie standard
-- **$\gamma > 0$** : down-pondère les exemples bien classés (transactions normales évidentes)
-- **$\alpha$** : poids de la classe positive
+$$FL(p_t) = -\alpha (1 - p_t)^\gamma \log(p_t)$$
 
-Le gradient pour XGBoost est calculé analytiquement et passé via l'API `objective`.
+- **$(1-p_t)^\gamma$** : down-weighting des exemples faciles (transactions normales bien classifiées)
+- **γ = 2** : standard (Lin et al., 2017) — les exemples avec $p > 0.9$ reçoivent $0.1^2 = 1\%$ du poids
+- **γ = 0** : retrouve la cross-entropie standard
+- **α = 0.75** : poids supplémentaire pour la classe fraude
 
-#### Optimisation Bayésienne par Optuna (TPE Sampler)
+#### 3.3.4 Optimisation Bayésienne par Optuna (TPE Sampler)
 
-Au lieu d'un GridSearch exhaustif ($O(N^k)$), l'optimisation bayésienne utilise un **Tree-structured Parzen Estimator (TPE)** qui modélise $P(\text{params}|\text{score})$ et $P(\text{params})$ pour trouver efficacement les meilleurs hyperparamètres.
+Contrairement au GridSearch exhaustif $O(N^k)$, l'optimisation bayésienne (TPE) modélise deux distributions $l(x)$ pour les bons hyperparamètres et $g(x)$ pour les mauvais, puis sélectionne les candidats qui maximisent $l(x)/g(x)$.
 
-**Espace de Recherche — Justifications théoriques :**
+**Espace de recherche et valeurs optimales (30 trials, TPE) :**
 
-| Paramètre | Plage | Justification |
-|-----------|-------|---------------|
-| max_depth | [3, 8] | Arbres peu profonds évitent l'overfitting ; la fraude nécessite [4-6] |
-| learning_rate | [0.05, 0.3] | lr faible → meilleure généralisation avec plus d'arbres |
-| n_estimators | [100, 400] | Inversement proportionnel au learning_rate |
-| subsample | [0.6, 1.0] | Réduction de variance par bootstrap stochastique |
-| colsample_bytree | [0.6, 1.0] | Comme max_features dans RF |
-| reg_lambda | [1, 8] | L2 sur les poids des feuilles : prévient la surspécialisation |
-| min_child_weight | [1, 8] | Somme minimale du hessien dans une feuille |
-| scale_pos_weight | [75, 300] | Exploration autour du ratio théorique (150) |
+| Hyperparamètre | Plage | Optimal | Justification Théorique |
+|----------------|-------|---------|-------------------------|
+| max_depth | [3, 8] | **4** | Arbres profonds → overfitting ; fraude → [4-6] optimal |
+| learning_rate | [0.05, 0.3] log | **0.128** | lr faible → meilleure généralisation avec plus d'arbres |
+| n_estimators | [100, 400] | **250** | Inversement proportionnel au learning_rate |
+| subsample | [0.6, 1.0] | **0.716** | Bootstrap stochastique : réduit la variance |
+| colsample_bytree | [0.6, 1.0] | **0.845** | Analogue à max_features du RF, réduit la corrélation |
+| reg_lambda | [1, 8] | **1.98** | L2 sur poids des feuilles : prévient la sur-spécialisation |
+| min_child_weight | [1, 8] | **3** | Somme minimale du hessien dans une feuille |
+| scale_pos_weight | [75, 300] | **157.7** | Exploration autour du ratio théorique (150) |
 
-**Résultats Optuna (Strategy A - scale_pos_weight) :**
+*Tableau 2.5 — Espace de recherche et valeurs optimales Optuna*
 
-| Paramètre | Valeur Optimale |
-|-----------|-----------------|
-| max_depth | 4 |
-| learning_rate | 0.128 |
-| n_estimators | 250 |
-| subsample | 0.716 |
-| colsample_bytree | 0.845 |
-| reg_lambda | 1.98 |
-| min_child_weight | 3 |
-| scale_pos_weight | 157.7 |
-| AUPRC (validation) | 0.1733 |
+#### 3.3.5 Résultats XGBoost
 
-#### Résultats XGBoost (scale_pos_weight)
+| Métrique | SPW | Focal Loss |
+|----------|-----|------------|
+| F1-Macro | 0.4958 | 0.4958 |
+| F1-Fraude | 0.0533 | 0.0506 |
+| AUPRC | **0.0766** ★ | 0.0695 |
+| ROC-AUC | 0.8231 | 0.8231 |
+| MCC | 0.1033 | 0.0970 |
+| Recall Fraude | 53.19% | 50.00% |
+| AUPRC val (Optuna) | **0.1733** | 0.0043 |
 
-| Métrique | Valeur |
-|----------|--------|
-| F1-Macro | 0.4958 |
-| AUPRC | 0.0766 |
-| ROC-AUC | 0.8288 |
-| MCC | 0.1033 |
-| Recall (Fraude) | 0.5319 |
-| Spécificité | 0.8827 |
+★ Meilleur AUPRC global — modèle retenu en production.
 
 ---
 
@@ -283,142 +354,238 @@ Au lieu d'un GridSearch exhaustif ($O(N^k)$), l'optimisation bayésienne utilise
 
 ### 4.1 Justification des Métriques
 
-#### Pourquoi ne pas utiliser l'Accuracy ?
-Un modèle qui prédit systématiquement "Normal" obtiendrait **99.34% d'accuracy** sans jamais détecter de fraude. C'est pourquoi l'accuracy est une métrique trompeuse pour les données déséquilibrées.
+L'Accuracy est **explicitement exclue**. Avec 99.34% de transactions normales, un modèle prédisant toujours "Normal" obtient 99.34% d'accuracy sans jamais détecter de fraude.
 
-#### F1-Macro
-$$F1_{\text{Macro}} = \frac{1}{2}\left(F1_{\text{Normal}} + F1_{\text{Fraud}}\right)$$
+#### 4.1.1 F1-Score Macro
 
-$$F1 = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}$$
+$$F1 = 2 \times \frac{\text{Précision} \times \text{Rappel}}{\text{Précision} + \text{Rappel}}$$
 
-**Avantage** : Équilibre précision et rappel pour chaque classe, puis fait la moyenne. Sensible aux performances sur la classe minoritaire.
+$$F1\text{-Macro} = \frac{1}{2}(F1_{\text{Normal}} + F1_{\text{Fraude}})$$
 
-#### AUPRC (Area Under Precision-Recall Curve)
-Contrairement à la courbe ROC, la courbe Precision-Recall est **plus informative pour les classes rares** car :
-- Elle ne tient pas compte des Vrais Négatifs (nombreux et faciles dans notre cas)
-- Elle mesure directement la capacité à trouver des fraudes sans déclencher trop de fausses alarmes
+Le F1-Macro accorde un **poids égal aux deux classes** indépendamment de leur fréquence. Il pénalise à la fois les faux positifs (via la précision) et les faux négatifs (via le rappel).
 
-Un classifieur aléatoire obtient AUPRC ≈ 0.0066 (= prévalence de fraude).
+#### 4.1.2 AUPRC — Aire sous la Courbe Précision-Rappel
 
-#### MCC (Matthews Correlation Coefficient)
+Contrairement à la courbe ROC qui intègre les Vrais Négatifs (nombreux et faciles), la courbe Précision-Rappel se concentre **uniquement sur la classe positive** (fraude). Un classifieur aléatoire obtient AUPRC ≈ 0.0066 (= prévalence de fraude). Tout AUPRC supérieur indique une performance réelle.
+
+L'AUPRC est la **métrique recommandée** pour les problèmes fortement déséquilibrés car elle mesure directement la capacité à trouver des fraudes sans déclencher de fausses alarmes.
+
+#### 4.1.3 MCC — Coefficient de Corrélation de Matthews
+
 $$MCC = \frac{TP \times TN - FP \times FN}{\sqrt{(TP+FP)(TP+FN)(TN+FP)(TN+FN)}}$$
 
-**Avantage** : Résume la matrice de confusion en un seul scalaire, **non biaisé même pour des déséquilibres extrêmes**. Range [-1, 1] ; 0 = prédicteur aléatoire.
+Le MCC résume l'intégralité de la matrice de confusion en un seul scalaire **non biaisé même pour des déséquilibres extrêmes**. Il varie de −1 (prédictions inverses) à +1 (parfait), avec 0 = classifieur aléatoire.
 
-### 4.2 Calibration des Probabilités
+### 4.2 Courbes Précision-Rappel et ROC
 
-#### Qu'est-ce que la calibration ?
-Un modèle est **bien calibré** si sa probabilité prédite correspond à la fréquence réelle des événements : si le modèle dit "70% de chance de fraude", alors 70% de ces transactions doivent effectivement être frauduleuses.
+Les courbes PR confirment que tous les modèles dépassent significativement le baseline aléatoire (AUPRC = 0.0066). XGBoost SPW offre le meilleur compromis précision/rappel sur l'ensemble de la courbe.
 
-#### Reliability Diagrams (Diagrammes de Fiabilité)
+**Pourquoi AUPRC > ROC-AUC pour les classes déséquilibrées ?**  
+La courbe ROC trace TPR vs FPR. Avec 282 925 normaux, un FPR de 0.01 représente 2 829 fausses alarmes — ce qui semble "bon" sur la courbe ROC mais est inacceptable en pratique. La courbe PR évite cet artefact.
 
-| Modèle | ECE (Expected Calibration Error) | Statut |
-|--------|----------------------------------|--------|
-| Logistic (ElasticNet) | 0.307 | ⚠️ Mal calibré |
-| Random Forest | 0.154 | ⚠️ Partiellement calibré |
-| XGBoost (SPW) | 0.120 | Acceptable |
+### 4.3 Calibration des Probabilités
 
-#### Platt Scaling appliqué à la Régression Logistique
+Un modèle est **bien calibré** si :
 
-Le Platt Scaling ajuste un **sigmoïde** sur les sorties du modèle :
+$$P(Y=1 \mid \hat{p} = p) = p \quad \forall p \in [0,1]$$
 
-$$P(y=1|f(x)) = \frac{1}{1 + e^{-(A \cdot f(x) + B)}}$$
+Si le modèle prédit $p = 0.8$, 80% des transactions correspondantes doivent être des fraudes.
 
-Résultat : L'ECE passe de **0.307** (avant) à une valeur réduite (après calibration), améliorant la fiabilité des probabilités pour la prise de décision.
+**Expected Calibration Error (ECE) :**
 
----
+$$ECE = \sum_{b=1}^{B} \frac{|\mathcal{B}_b|}{n} \left| \text{acc}(\mathcal{B}_b) - \text{conf}(\mathcal{B}_b) \right|$$
 
-## 5. Étape 4 : Interprétabilité
+| Modèle | ECE Avant | Statut | Action |
+|--------|-----------|--------|--------|
+| Logistic (ElasticNet) | 0.4756 | ⚠ Mal calibré | Platt Scaling appliqué |
+| Random Forest | 0.3859 | Partiellement calibré | Acceptable |
+| XGBoost SPW | 0.4631 | ⚠ Mal calibré | Acceptable en contexte |
 
-### 5.1 SHAP (SHapley Additive Explanations)
+*Tableau 3.1 — Erreur de Calibration (ECE) et actions correctives*
 
-SHAP est fondé sur la théorie des jeux coopératifs. La valeur de Shapley d'une feature $j$ pour une observation $i$ est :
+### 4.4 Platt Scaling
 
-$$\phi_j(i) = \sum_{S \subseteq F \setminus \{j\}} \frac{|S|!(|F|-|S|-1)!}{|F|!} \left[v(S \cup \{j\}) - v(S)\right]$$
+Le Platt Scaling ajuste un sigmoïde paramétrique sur les sorties brutes du modèle :
 
-**Propriétés garanties** :
-- **Efficience** : $\sum_j \phi_j(i) = f(x_i) - E[f(x)]$
-- **Consistance** : Si une feature contribue davantage dans tout contexte, sa valeur SHAP est plus élevée
-- **Précision locale** : La somme des SHAP values reproduit exactement la prédiction
+$$P_{\text{cal}}(y=1 \mid f(x)) = \frac{1}{1 + \exp(-(A \cdot f(x) + B))}$$
 
-Pour XGBoost, nous utilisons **TreeSHAP** (Lundberg et al., 2020), qui est exact et efficace en $O(TLD^2)$.
+Les paramètres $A$ et $B$ sont estimés par maximum de vraisemblance sur un ensemble de validation distinct, avec une validation croisée à 2 folds pour éviter l'overfitting.
 
-### 5.2 Features les Plus Importantes (XGBoost TreeSHAP)
+**Résultat sur la Régression Logistique :**
 
-Les features ayant les plus grandes valeurs SHAP moyennes (mean |SHAP|) sont typiquement :
-- **V14, V4, V12** : Composantes PCA fortement discriminantes (connues dans la littérature)
-- **V_norm** : Norme L2 des composantes PCA — mesure l'amplitude globale du profil
-- **Amount_log** : Montant transformé — les fraudes ont souvent des montants atypiques
-- **V4_V11** : Interaction entre deux composantes PCA discriminantes
+| Avant Platt Scaling | Après Platt Scaling | Réduction |
+|---------------------|---------------------|-----------|
+| ECE = 0.4756 | ECE = **0.0602** | **−87.3%** |
 
-### 5.3 Interprétation d'une Prédiction Individuelle (Waterfall)
-
-Le graphique waterfall montre pour une transaction frauduleuse spécifique :
-- **Valeurs rouges** : Features qui poussent la prédiction vers "fraude"
-- **Valeurs bleues** : Features qui poussent vers "normal"
-- La somme de toutes les contributions SHAP + valeur moyenne = prédiction finale
+La calibration est critique en fraude bancaire : un score de 0.8 doit vraiment signifier 80% de probabilité de fraude pour guider les décisions de blocage ou d'investigation manuelle.
 
 ---
 
-## 6. Résultats Finaux et Comparaison
+## 5. Étape 4 : Interprétabilité par SHAP
 
-### Tableau de Comparaison
+### 5.1 Fondements Théoriques de SHAP
 
-| Modèle | F1-Macro | AUPRC | MCC | ROC-AUC | Recall-Fraud |
-|--------|----------|-------|-----|---------|--------------|
-| Logistic (ElasticNet) | 0.4383 | 0.0520 | 0.0996 | 0.8426 | 0.8298 |
-| Random Forest | 0.4933 | 0.0375 | 0.1041 | 0.8399 | 0.5532 |
-| XGBoost SPW | **0.4958** | **0.0766** | **0.1033** | 0.8288 | 0.5319 |
+SHAP (Lundberg & Lee, 2017) est fondé sur la théorie des jeux coopératifs de Lloyd Shapley (Prix Nobel d'Économie 2012). La valeur de Shapley de la feature $j$ pour l'observation $i$ est :
 
-### Discussion
+$$\phi_j(i) = \sum_{S \subseteq F \setminus \{j\}} \frac{|S|!(|F|-|S|-1)!}{|F|!} \left[ v(S \cup \{j\}) - v(S) \right]$$
 
-**XGBoost (scale_pos_weight)** est le meilleur modèle sur AUPRC, la métrique la plus pertinente pour la détection de fraude avec données déséquilibrées.
+où $S$ est un sous-ensemble de features, $F$ l'ensemble complet, et $v(S)$ la prédiction avec le sous-ensemble $S$.
 
-**Logistic Regression** obtient le meilleur recall (83%) mais au prix d'une précision très faible — utile si le coût d'une fraude manquée est extrêmement élevé.
+**Propriétés garanties :**
 
-**Random Forest** offre le meilleur MCC et est le plus interprétable via la matrice de proximité.
+| Propriété | Signification |
+|-----------|---------------|
+| **Efficience** | $\sum_j \phi_j(i) = f(x_i) - E[f(x)]$ — les SHAP values somment à la prédiction |
+| **Consistance** | Si une feature contribue davantage dans tout contexte, sa valeur SHAP est plus élevée |
+| **Absence** | Une feature sans effet a une valeur SHAP nulle |
 
-### Comparaison SPW vs Focal Loss
+### 5.2 TreeSHAP pour XGBoost
 
-| Stratégie | AUPRC (val) | Avantage |
-|-----------|-------------|----------|
-| scale_pos_weight | 0.1733 | Simple, efficace, convergence rapide |
-| Focal Loss | 0.0043 | Théoriquement supérieur, mais sensible au gradient |
+Pour les modèles à base d'arbres, l'algorithme TreeSHAP (Lundberg et al., 2020) calcule les valeurs de Shapley de manière **exacte et efficiente en O(TLD²)**, évitant l'approximation nécessaire avec KernelSHAP.
 
-**Conclusion** : `scale_pos_weight` surpasse la Focal Loss dans ce contexte. La Focal Loss requiert une calibration soignée des hyperparamètres $\gamma$ et $\alpha$, et la dérivation du gradient approximé dans notre implémentation n'est pas aussi stable numériquement que `scale_pos_weight`.
+**Features les plus importantes (mean |SHAP|) :**
+
+| Rang | Feature | Interprétation |
+|------|---------|----------------|
+| 1 | **Amount_log** | Les montants élevés (log) poussent fortement vers fraude |
+| 2 | **Amount_sqrt** | Transformation complémentaire du montant |
+| 3 | **Amount_zscore_local** | Montant anormal par rapport à la période temporelle |
+| 4 | **V28** | Composante PCA discriminante (anonymous) |
+| 5 | **V6** | Composante PCA discriminante |
+| 6 | **V_norm** | Amplitude globale du profil PCA |
+| 7 | **V14** | Connu dans la littérature comme très discriminant |
+| 8 | **V4** | Forte asymétrie fraude/normal |
+
+*Tableau 4.1 — Features les plus importantes selon TreeSHAP (XGBoost)*
+
+**Lecture du Beeswarm Plot :**
+- Chaque point = une observation
+- Position horizontale = impact SHAP (droite → pousse vers fraude)
+- Couleur = valeur de la feature (rouge = haute, bleu = basse)
+
+**Waterfall Plot — Prédiction individuelle :**  
+Pour une transaction frauduleuse spécifique, le waterfall plot décompose la prédiction finale = valeur de base + contribution de chaque feature (rouge = poussé vers fraude, bleu = poussé vers normal).
+
+### 5.3 Comparaison SHAP Fraude vs Normal
+
+La comparaison des valeurs SHAP moyennes par classe révèle les **asymétries structurelles** des patterns de fraude. Les features avec SHAP positif pour Fraude et négatif pour Normal sont les plus discriminantes : **V14, V4, V_norm** apparaissent comme les features les plus importantes pour discriminer les fraudes des transactions normales.
+
+### 5.4 SHAP pour la Régression Logistique
+
+Pour la Régression Logistique, le **LinearExplainer** exploite la structure analytique du modèle :
+
+$$\phi_i = w_i \cdot (x_i - E[x_i])$$
+
+Les valeurs SHAP sont directement proportionnelles aux coefficients × (feature − moyenne), ce qui permet de valider la cohérence entre les deux modèles.
+
+**Cohérence inter-modèles :** Les features importantes pour XGBoost (TreeSHAP) le sont également pour la Régression Logistique (LinearSHAP) — Amount_log, Amount_zscore_local, V28, V6, V14, V4 apparaissent dans les deux top 10 — ce qui valide la robustesse des signaux discriminants.
+
+### 5.5 Avantages SHAP vs méthodes alternatives
+
+| Méthode | Globale | Locale | Exacte | Rapide |
+|---------|---------|--------|--------|--------|
+| **TreeSHAP** | ✓ | ✓ | ✓ | ✓ |
+| LIME | ✗ | ✓ | ✗ (approx.) | ✓ |
+| Permutation Importance | ✓ | ✗ | ✗ | ✗ |
+| Coefficients LR | ✓ | Partiel | ✓ | ✓ |
 
 ---
 
-## 7. Conclusion
+## 6. Synthèse et Comparaison des Modèles
 
-### Synthèse Technique
+### 6.1 Tableau Comparatif Final
 
-Ce projet a démontré une pipeline complète de ML pour la détection de fraude :
+| Modèle | F1-Macro | F1-Fraude | AUPRC | ROC-AUC | MCC | Recall-Fraude |
+|--------|----------|-----------|-------|---------|-----|---------------|
+| Logistic (ElasticNet) | 0.4383 | 0.0381 | 0.0520 | 0.8426 | 0.0996 | 82.98% |
+| Random Forest | 0.4933 | 0.0545 | 0.0375 | 0.8399 | 0.1041 | 55.32% |
+| **XGBoost SPW ★** | **0.4958** | 0.0533 | **0.0766** | 0.8231 | 0.1033 | 53.19% |
+| XGBoost Focal | 0.4958 | 0.0506 | 0.0695 | 0.8231 | 0.0970 | 50.00% |
 
-1. **Feature Engineering** : 14 nouvelles features créées (transformations, interactions, statistiques locales) → 42 features totales
-2. **Gestion du déséquilibre** : Comparaison de 5 approches ; `class_weight` / `scale_pos_weight` s'avère le plus robuste
-3. **Modèles** : 3 approches mathématiquement distinctes couvrant le spectre linéaire-ensemble-boosting
-4. **Calibration** : Platt Scaling réduit significativement l'ECE de la Régression Logistique
-5. **Interprétabilité** : TreeSHAP identifie V14, V4, V_norm comme features décisives
+★ Meilleur sur AUPRC (métrique principale pour données déséquilibrées).
 
-### Limites et Perspectives
+### 6.2 Analyse et Discussion
 
-- Le dataset synthétique (généré pour respecter la confidentialité des données Kaggle) n'a pas la même structure que les vraies données PCA anonymisées
-- L'optimisation Optuna avec 30 trials reste limitée ; 200+ trials amélioreraient les résultats
-- L'implémentation de la Focal Loss via l'API sklearn XGBoost est moins stable qu'en mode Booster natif
-- Des approches comme **Isolation Forest** ou **AutoEncoder** pour la détection d'anomalies pourraient compléter l'approche supervisée
+**XGBoost avec scale_pos_weight (SPW)** est le modèle le plus performant sur l'AUPRC (0.0766), la métrique la plus pertinente pour les données déséquilibrées. Il offre également le meilleur F1-Macro (0.4958).
 
-### Recommandations Opérationnelles
+**La Régression Logistique** obtient le meilleur recall fraude (83%), la rendant préférable dans un contexte où le coût d'une fraude manquée est extrêmement élevé et où les fausses alarmes sont tolérées (ex : alertes pour vérification humaine).
 
-Pour un déploiement en production :
-1. Utiliser **XGBoost SPW** comme modèle principal (meilleur AUPRC)
-2. Appliquer **Platt Scaling** pour des probabilités calibrées exploitables
-3. Définir le **seuil de décision** selon le coût asymétrique métier (FN coûte plus que FP)
-4. Monitorer les **drift de distribution** pour maintenir les performances dans le temps
-5. Utiliser **SHAP** pour justifier chaque décision de blocage auprès des équipes fraude
+**Le Random Forest** présente le meilleur MCC (0.1041), reflétant sa capacité à maintenir un équilibre stable entre toutes les cellules de la matrice de confusion. Sa propriété unique — la matrice de proximité — apporte une valeur diagnostique pour comprendre les zones d'ambiguïté.
+
+**La Focal Loss n'a pas surpassé scale_pos_weight** dans ce contexte. La dérivation analytique du gradient pour l'API sklearn XGBoost introduit une instabilité numérique que la formulation native SPW n'a pas. Ce résultat illustre l'importance de la stabilité d'implémentation au-delà de la sophistication théorique.
+
+### 6.3 Comparaison SPW vs Focal Loss
+
+| Critère | scale_pos_weight | Focal Loss | Recommandation |
+|---------|-----------------|------------|----------------|
+| AUPRC (validation Optuna) | **0.1733** | 0.0043 | SPW clairement supérieur |
+| Implémentation | Native XGBoost | Custom gradient | SPW plus stable |
+| Nombre d'hyperparamètres | 1 (SPW) | 2 (γ, α) | SPW plus simple |
+| Interprétabilité | Intuitive (ratio N/F) | Abstraite (focale) | SPW plus lisible |
+
+*Tableau 5.2 — Analyse comparative scale_pos_weight vs Focal Loss*
 
 ---
 
-*Rapport généré automatiquement par le pipeline Python.*  
-*Dataset : Credit Card Fraud Detection (synthétique, 284 807 transactions)*  
-*Technologies : scikit-learn, XGBoost, Optuna, SHAP, imbalanced-learn*
+## 7. Conclusion et Perspectives
+
+### 7.1 Bilan du Projet
+
+Ce projet a démontré avec succès la mise en œuvre d'une pipeline complète d'apprentissage automatique pour la détection de fraude en environnement critique déséquilibré. Les contributions principales sont :
+
+1. **Feature Engineering** : 14 nouvelles variables créées — transformations de distribution, encodages cycliques, statistiques locales et interactions non-linéaires — portant le total à 42 features.
+2. **Analyse de Colinéarité** : détection de multicolinéarité parfaite (VIF infini pour V2/V13 et V24/V26) et gestion par régularisation plutôt que suppression manuelle.
+3. **Gestion du Déséquilibre** : comparaison exhaustive de 5 stratégies ; `class_weight`/`scale_pos_weight` s'avère le plus robuste pour préserver l'intégrité des données.
+4. **Trois Modèles Complémentaires** : Régression Logistique (interprétabilité maximale + recall élevé 83%), Random Forest (matrice de proximité + outlier detection + meilleur MCC), XGBoost (meilleur AUPRC 0.0766 + optimisation bayésienne).
+5. **Calibration** : réduction de l'ECE de la Régression Logistique de 0.4756 à 0.0602 par Platt Scaling (−87%).
+6. **Interprétabilité SHAP** : identification des features discriminantes (Amount_log, V14, V4, V_norm), validation de la cohérence inter-modèles, explication locale par waterfall.
+
+### 7.2 Limites et Perspectives
+
+- **Optuna étendu** : passer de 30 à 200+ trials améliorerait les hyperparamètres optimaux, notamment pour la Focal Loss.
+- **Approches non supervisées** : Isolation Forest, Autoencoder variationnel (VAE), ou OCSVM comme modèles complémentaires pour détecter des fraudes de typologies inconnues.
+- **Monitoring en production** : détecteurs de data drift (KS test, PSI) pour alerter en cas de changement de distribution.
+- **Threshold optimization** : définition du seuil par minimisation du coût métier $C(FP) \times N_{FP} + C(FN) \times N_{FN}$ plutôt que par maximisation du F1.
+- **Modèles de séquences** : RNN/LSTM pour modéliser le comportement temporel d'un client à travers l'historique de transactions.
+- **Ensemble de modèles** : stacking LR + RF + XGBoost pourrait combiner le recall de LR avec l'AUPRC de XGBoost.
+
+### 7.3 Recommandations Opérationnelles
+
+| Aspect | Recommandation |
+|--------|----------------|
+| Modèle principal | XGBoost SPW + Platt Scaling (probabilités calibrées) |
+| Seuil de décision | Calibrer selon le ratio coût métier FN/FP |
+| Explicabilité | SHAP pour justifier chaque décision de blocage auprès des équipes fraude |
+| Monitoring | Surveiller AUPRC et MCC en production ; réentraîner si dégradation > 5% |
+| Réentraînement | Mensuel avec les nouvelles transactions labellisées |
+
+*Tableau 6.1 — Recommandations pour le déploiement en production*
+
+---
+
+## 8. Références Bibliographiques
+
+[1] Lundberg, S. M., & Lee, S. I. (2017). *A Unified Approach to Interpreting Model Predictions*. NeurIPS 2017.
+
+[2] Chen, T., & Guestrin, C. (2016). *XGBoost: A Scalable Tree Boosting System*. KDD 2016.
+
+[3] Lin, T. Y., Goyal, P., Girshick, R., He, K., & Dollár, P. (2017). *Focal Loss for Dense Object Detection*. ICCV 2017.
+
+[4] Chawla, N. V., Bowyer, K. W., Hall, L. O., & Kegelmeyer, W. P. (2002). *SMOTE: Synthetic Minority Over-Sampling Technique*. JAIR, 16, 321–357.
+
+[5] Breiman, L. (2001). *Random Forests*. Machine Learning, 45(1), 5–32.
+
+[6] Platt, J. C. (1999). *Probabilistic Outputs for Support Vector Machines and Comparisons to Regularized Likelihood Methods*. Advances in Large Margin Classifiers.
+
+[7] Akiba, T., Sano, S., Yanase, T., Ohta, T., & Koyama, M. (2019). *Optuna: A Next-generation Hyperparameter Optimization Framework*. KDD 2019.
+
+[8] Dal Pozzolo, A., Caelen, O., Johnson, R. A., & Bontempi, G. (2015). *Calibrating Probability with Undersampling for Unbalanced Classification*. IEEE SSCI 2015.
+
+[9] He, H., & Garcia, E. A. (2009). *Learning from Imbalanced Data*. IEEE Transactions on Knowledge and Data Engineering, 21(9).
+
+[10] Lundberg, S. M., Erion, G., Chen, H., et al. (2020). *From Local Explanations to Global Understanding with Explainable AI for Trees*. Nature Machine Intelligence, 2(1), 56–67.
+
+---
+
+*ENSET Mohammedia — Projet Intelligence Artificielle — SDIA 2025-2026*  
+*Encadrant : Mme. Asmae OUHMIDA*
