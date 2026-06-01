@@ -1,0 +1,7 @@
+/outputs/
+/data/creditcard.csv
+
+# Optionally ignore any large local datasets placed in data/
+/data/*.csv
+/data/*.parquet
+/data/*.zip

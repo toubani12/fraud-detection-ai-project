@@ -1,0 +1,26 @@
+PREDICTION OUTLIER ANALYSIS - RANDOM FOREST
+========================================================
+Method: Proximity matrix P[i,j] = fraction of trees co-locating i,j in same leaf.
+Outlier Score = n / sum_j_in_class(P[i,j]^2)
+
+Test Set Errors:
+  False Negatives (missed fraud): 168
+  False Positives (false alarms): 7047
+
+Explanation of outlier failure modes:
+1. False Negatives: Fraudulent transactions that structurally resemble normal
+   behavior (small amounts, common PCA components V1-V28). They have low 
+   proximity to other fraud observations — the forest cannot gather enough
+   fraud neighbors to vote confidently against the normal majority class.
+
+2. False Positives: Normal transactions with anomalous feature values 
+   (extreme PCA components, very large amounts) that cluster near fraud 
+   in the proximity space, causing the forest to over-trigger.
+
+3. Boundary points: Observations with predicted probability ≈ 0.5 where 
+   the proximity to both classes is nearly equal. These reveal a fundamental 
+   overlap zone where fraud and normal patterns are statistically indistinct.
+
+4. Structural outliers: Rare fraud typologies (unusual sequences of PCA
+   components) unseen during training. The model has no reference proximity
+   neighborhood and defaults to the majority class prediction.
